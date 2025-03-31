@@ -43,56 +43,97 @@ function HeatmapLayer() {
 }
 
 function CityBorder() {
-  const [geoData, setGeoData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const loadGeoJSON = async () => {
-      try {
-        const response = await fetch('/maps/sao_paulo_cidade.json');
-        
-        if (!response.ok) {
-          throw new Error(`Erro HTTP: ${response.status}`);
+    const [cityGeoJSON, setCityGeoJSON] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+  
+    useEffect(() => {
+      const loadGeoJSON = async () => {
+        try {
+          const response = await fetch('/maps/sao_paulo_cidade.json');
+          if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
+          
+          const data = await response.json();
+          
+          // Validação básica do GeoJSON
+          if (!data?.features?.[0]?.geometry?.coordinates) {
+            throw new Error('GeoJSON inválido - estrutura incorreta');
+          }
+  
+          setCityGeoJSON(data);
+        } catch (err) {
+          console.error("Falha ao carregar GeoJSON:", err);
+          setError(err.message);
+          
+          // Fallback com coordenadas aproximadas de SP
+          setCityGeoJSON({
+            type: "FeatureCollection",
+            features: [{
+              type: "Feature",
+              geometry: {
+                type: "Polygon",
+                coordinates: [[
+                  [-46.825, -23.700], [-46.825, -23.400],
+                  [-46.350, -23.400], [-46.350, -23.700],
+                  [-46.825, -23.700]
+                ]]
+              }
+            }]
+          });
+        } finally {
+          setLoading(false);
         }
-
-        const data = await response.json();
+      };
+  
+      loadGeoJSON();
+    }, []);
+  
+    if (loading) return null;
+  
+    return (
+      <>
+        {/* 1. Primeiro renderiza o contorno da cidade */}
+        {cityGeoJSON && (
+          <GeoJSON
+            key="city-outline"
+            data={cityGeoJSON}
+            style={{
+              fillColor: "transparent",
+              fillOpacity: 0,
+              color: "#000000",
+              weight: 2,
+              opacity: 0.8
+            }}
+          />
+        )}
         
-        if (!data?.features?.[0]?.geometry) {
-          throw new Error('Estrutura GeoJSON inválida');
-        }
-
-        setGeoData(data);
-      } catch (err) {
-        console.error("Falha ao carregar GeoJSON:", err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadGeoJSON();
-  }, []);
-
-  if (loading) return null; 
-  if (error) {
-    console.error(error);
-    return null;
+        {/* 2. Depois cria um polígono invertido para mascarar o resto do mundo */}
+        {cityGeoJSON && (
+          <GeoJSON
+            key="world-mask"
+            data={{
+              type: "Feature",
+              geometry: {
+                type: "Polygon",
+                coordinates: [
+                  // Borda externa (todo o mundo)
+                  [[-180, -90], [-180, 90], [180, 90], [180, -90], [-180, -90]],
+                  // Borda interna (corte da cidade de SP - invertido)
+                  ...cityGeoJSON.features[0].geometry.coordinates
+                ]
+              }
+            }}
+            style={{
+              fillColor: "white",
+              fillOpacity: 0.7,
+              color: "transparent",
+              weight: 0
+            }}
+          />
+        )}
+      </>
+    );
   }
-
-  return geoData ? (
-    <GeoJSON
-      data={geoData}
-      style={{
-        color: "#000000",  
-        weight: 5,          
-        opacity: 0.65,
-        fillOpacity: 0.1,
-        fillColor: "transparent"
-      }}
-    />
-  ) : null;
-}
 
 export default function MapaOutorga() {
   if (typeof window === 'undefined') {
